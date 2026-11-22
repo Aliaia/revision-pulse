@@ -17,6 +17,10 @@ shows whether you're on target for finals starting **Monday 25 January 2027**.
   comes back for a refresh 2 days after its first practice, then 4, then 7, then every 10 days. Each day
   suggests the station most overdue for a refresh (if any), then stations never tried, picked from different
   groups where possible. Stations due a refresh show **🔁 due** on the OSCE screen.
+- **Topics**: all 429 conditions from the GMC UKMLA content map (September 2026 update, Appendix A),
+  grouped into 24 body systems. Open an area and rate each topic she has worked through: 😬 shaky, 🙂 OK
+  or 💪 confident. The Topics screen has search, a list of shaky topics to revisit, and a "Needs work" sort.
+  The Today screen shows one small card: overall progress and the two least confident areas.
 - **Demo**: Settings → *Try with sample data* (or add `?demo` to the link) opens four weeks of made-up
   progress, kept separate from real data.
 - **Settings**: dates and daily targets, plus backup and restore.

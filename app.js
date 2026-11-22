@@ -58,7 +58,20 @@ function defaultSettings() {
     coverageGoal: 3,
   };
 }
-const defaultState = () => ({ v: 1, onboarded: false, settings: defaultSettings(), logs: {}, stations: defaultStations(), installDismissed: false });
+const defaultState = () => ({ v: 1, onboarded: false, settings: defaultSettings(), logs: {}, stations: defaultStations(), topics: {}, installDismissed: false });
+
+// ---------- UKMLA topics (data in topics.js) ----------
+const RATINGS = [null, { emoji: '😬', label: 'Shaky' }, { emoji: '🙂', label: 'OK' }, { emoji: '💪', label: 'Confident' }];
+const fold = s => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+const topicSlug = s => fold(s).replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 70);
+const TOPIC_GROUPS = (window.UKMLA || []).map(([name, emoji, items]) => ({
+  id: topicSlug(name), name, emoji,
+  items: items.map(full => {
+    const m = full.match(/^(.*?)\s*\((including [^()]*)\)$/); // long "(including …)" lists become small detail text
+    return { id: topicSlug(full), full, search: fold(full), name: m ? m[1] : full, detail: m ? m[2] : '' };
+  }),
+}));
+const TOPIC_IDS = new Set(TOPIC_GROUPS.flatMap(g => g.items.map(it => it.id)));
 
 // ---------- Storage ----------
 const STORE_KEY = DEMO ? 'revisionPulse.demo' : 'revisionPulse.v1';
@@ -81,7 +94,11 @@ function normalise(raw) {
     ? raw.stations.filter(x => x && typeof x.id === 'string' && typeof x.name === 'string')
         .map(x => ({ id: x.id, name: x.name.slice(0, 60), cat: typeof x.cat === 'string' && x.cat ? x.cat.slice(0, 40) : 'Other' }))
     : d.stations;
-  return { v: 1, onboarded: !!raw.onboarded, settings, logs, stations, installDismissed: !!raw.installDismissed };
+  const topics = {};
+  if (raw.topics && typeof raw.topics === 'object') {
+    for (const [k, v] of Object.entries(raw.topics)) if (k.length <= 100 && v && [1, 2, 3].includes(v.r)) topics[k] = { r: v.r, d: isKey(v.d) ? v.d : null };
+  }
+  return { v: 1, onboarded: !!raw.onboarded, settings, logs, stations, topics, installDismissed: !!raw.installDismissed };
 }
 
 function load() {
@@ -111,6 +128,14 @@ function demoState() {
   }
   st.logs['2026-12-25'] = { q: 0, osce: [], rest: true };
   if (today < st.settings.exam) st.logs[today] = { q: 60, osce: [ids[1]], rest: false };
+  const weak = ['eye', 'kidneys-and-urinary-tract'];
+  for (const g of TOPIC_GROUPS) for (const it of g.items) {
+    const isWeak = weak.includes(g.id);
+    if (rnd() < (isWeak ? 0.5 : 0.33)) {
+      const y = rnd();
+      st.topics[it.id] = { r: isWeak ? (y < 0.6 ? 1 : 2) : (y < 0.12 ? 1 : y < 0.5 ? 2 : 3), d: addDays(today, -Math.floor(rnd() * 12)) };
+    }
+  }
   return st;
 }
 let state = load();
@@ -284,9 +309,9 @@ function streak() {
 }
 
 // ---------- UI state ----------
-const ui = { chart: 'q', osceEdit: false, pop: false, ringFrom: null };
+const ui = { chart: 'q', osceEdit: false, pop: false, ringFrom: null, topicSort: 'gmc', topicQuery: '', showAllShaky: false };
 let sheet = null; // { type, date, back, fresh }
-const TABS = ['today', 'journey', 'osce', 'settings'];
+const TABS = ['today', 'journey', 'topics', 'osce', 'settings'];
 const currentTab = () => { const h = location.hash.slice(1); return TABS.includes(h) ? h : 'today'; };
 
 const Q_DONE = ['Daily dose complete 💊', 'Target smashed! 🎯', 'Questions done — big brain energy 🧠', 'That’s the dose. Go hydrate 💧', 'Done! Future you says thanks 🙌'];
@@ -390,6 +415,8 @@ function viewToday(p) {
     ${suggestions.length ? `<p class="mini-label">Suggested next — one tap to tick</p><div class="chips">${suggestions.map(({ st, note }) => `<button class="schip" data-action="toggleStation" data-id="${esc(st.id)}" data-date="${t}">＋ ${esc(st.name)} <small>${note === 'new' ? '✨ new' : `🔁 ${note}`}</small></button>`).join('')}</div>` : ''}
     <button class="btn wide soft" data-action="openStations" data-date="${t}">Tick a station</button>
   </section>
+
+  ${topicsCard()}
 
   ${raceCard(p)}
 
@@ -539,6 +566,96 @@ function calendar(p) {
   return h + '</div>';
 }
 
+// ---------- Topics ----------
+function topicStats() {
+  const groups = TOPIC_GROUPS.map(g => {
+    const counts = [0, 0, 0, 0];
+    let sum = 0;
+    for (const it of g.items) { const r = (state.topics[it.id] || {}).r || 0; counts[r]++; sum += r; }
+    const rated = g.items.length - counts[0];
+    return { g, total: g.items.length, counts, rated, avg: rated ? sum / rated : null, readiness: sum / (3 * g.items.length) };
+  });
+  const all = [0, 0, 0, 0];
+  for (const x of groups) x.counts.forEach((n, i) => { all[i] += n; });
+  const total = groups.reduce((a, x) => a + x.total, 0);
+  const today = todayKey();
+  const todayCount = Object.entries(state.topics).filter(([k, v]) => v.d === today && TOPIC_IDS.has(k)).length;
+  // Least confident = lowest average rating among areas she has started (ties: more shaky topics first).
+  const leastConfident = groups.filter(x => x.rated && x.avg < 3)
+    .sort((a, b) => a.avg - b.avg || b.counts[1] - a.counts[1] || a.rated - b.rated).slice(0, 2);
+  return { groups, all, total, rated: total - all[0], todayCount, leastConfident };
+}
+
+function stackBar(counts, total, cls = '') {
+  const seg = (n, k) => n ? `<i class="seg-${k}" style="width:${((n / total) * 100).toFixed(2)}%"></i>` : '';
+  return `<span class="stack ${cls}" role="img" aria-label="${counts[3]} confident, ${counts[2]} OK, ${counts[1]} shaky, ${counts[0]} not yet">${seg(counts[3], 'c')}${seg(counts[2], 'o')}${seg(counts[1], 's')}</span>`;
+}
+
+function topicsCard() {
+  if (!TOPIC_GROUPS.length) return '';
+  const s = topicStats();
+  const line = !s.rated ? 'Worked through a topic? Tap here to tick it off.'
+    : s.leastConfident.length ? `😬 Least confident: ${s.leastConfident.map(x => `<b>${esc(x.g.name)}</b>`).join(' · ')}`
+    : '💪 Confident in everything you’ve covered so far';
+  return `<section class="card topics-card" data-action="tab" data-tab="topics" role="link" tabindex="0" aria-label="UKMLA topics: ${s.rated} of ${s.total} worked through">
+    <div class="card-head"><h2>UKMLA topics</h2><span class="count">${num(s.rated)}<small> / ${num(s.total)}</small></span></div>
+    ${stackBar(s.all, s.total)}
+    <div class="topics-line"><span>${line}</span><span class="chev" aria-hidden="true">›</span></div>
+  </section>`;
+}
+
+function topicRow(it, sub = '') {
+  const r = (state.topics[it.id] || {}).r || 0;
+  const detail = sub || it.detail;
+  return `<div class="topic-row">
+    <div class="topic-text"><div class="topic-name">${esc(it.name)}</div>${detail ? `<div class="topic-detail">${esc(detail)}</div>` : ''}</div>
+    <div class="rate" role="group" aria-label="How confident are you with ${esc(it.name)}?">${[1, 2, 3].map(v =>
+      `<button class="${r === v ? 'on' : ''}" data-action="rate" data-id="${it.id}" data-r="${v}" aria-pressed="${r === v}" aria-label="${RATINGS[v].label}">${RATINGS[v].emoji}</button>`).join('')}</div>
+  </div>`;
+}
+
+function topicResultsHTML(q) {
+  q = fold((q || '').trim());
+  if (!q) return '';
+  const res = [];
+  for (const g of TOPIC_GROUPS) for (const it of g.items) if (it.search.includes(q)) res.push(topicRow(it, `${g.emoji} ${g.name}`));
+  return `<section class="card results">${res.length
+    ? res.slice(0, 40).join('') + (res.length > 40 ? `<p class="muted small more">…and ${res.length - 40} more — try a longer search.</p>` : '')
+    : '<p class="muted small more">No topic matches that.</p>'}</section>`;
+}
+
+function viewTopics() {
+  const s = topicStats();
+  const order = ui.topicSort === 'needs'
+    ? [...s.groups].sort((a, b) => a.readiness - b.readiness || a.g.name.localeCompare(b.g.name))
+    : s.groups;
+  const shaky = TOPIC_GROUPS.flatMap(g => g.items.filter(it => (state.topics[it.id] || {}).r === 1).map(it => ({ it, g })));
+  const shown = ui.showAllShaky ? shaky : shaky.slice(0, 5);
+  const areaRow = x => `<button class="area-row" data-action="openArea" data-id="${x.g.id}">
+      <span class="area-emoji" aria-hidden="true">${x.g.emoji}</span>
+      <span class="area-main"><span class="area-name">${esc(x.g.name)}</span>${stackBar(x.counts, x.total, 'thin')}</span>
+      <span class="area-count">${x.rated}/${x.total}</span><span class="chev" aria-hidden="true">›</span></button>`;
+  return `
+  ${hero({ eyebrow: 'UKMLA content map', title: 'Topics', chips: `<span class="chip">✅ ${num(s.rated)} of ${num(s.total)} worked through</span>${s.todayCount ? `<span class="chip">✨ +${s.todayCount} today</span>` : ''}` })}
+  <section class="card">
+    ${stackBar(s.all, s.total, 'big')}
+    <div class="legend"><span><i class="sw c"></i>💪 Confident ${s.all[3]}</span><span><i class="sw o"></i>🙂 OK ${s.all[2]}</span><span><i class="sw s"></i>😬 Shaky ${s.all[1]}</span><span><i class="sw n"></i>Not yet ${s.all[0]}</span></div>
+    <p class="muted small">Worked through a topic, for example with Claude? Open its area and tap how confident you feel.</p>
+  </section>
+  <div class="search-wrap"><input id="topicSearch" type="search" placeholder="Search all ${s.total} topics" value="${esc(ui.topicQuery)}" autocomplete="off" enterkeyhint="search"></div>
+  <div id="topicResults">${topicResultsHTML(ui.topicQuery)}</div>
+  ${shaky.length ? `<section class="card">
+    <div class="card-head"><h2>😬 Shaky topics</h2><span class="tag">${shaky.length} to revisit</span></div>
+    ${shown.map(({ it, g }) => topicRow(it, `${g.emoji} ${g.name}`)).join('')}
+    ${shaky.length > 5 ? `<button class="link-btn" data-action="toggleShaky">${ui.showAllShaky ? 'Show fewer' : `Show all ${shaky.length}`}</button>` : ''}
+  </section>` : ''}
+  <div class="areas-head"><h3>Areas</h3><div class="seg">
+    <button class="${ui.topicSort !== 'needs' ? 'on' : ''}" data-action="topicSort" data-sort="gmc">GMC order</button>
+    <button class="${ui.topicSort === 'needs' ? 'on' : ''}" data-action="topicSort" data-sort="needs">Needs work</button></div></div>
+  <section class="card areas">${order.map(areaRow).join('')}</section>
+  <p class="footer">Topics from the ${esc(window.UKMLA_SOURCE || 'GMC MLA content map')}.</p>`;
+}
+
 function viewOsce(p) {
   const counts = stationCounts(), goal = state.settings.coverageGoal, t = p.today;
   const hist = stationHistory(t);
@@ -634,7 +751,7 @@ function sheetHTML() {
       <div class="welcome-art">💓</div>
       <h2>Revision Pulse</h2>
       <p class="lead">Tick off what you did each day. Your progress line shows whether you’re on target for finals.</p>
-      <ul class="how"><li><span>✅</span>Log questions in one tap</li><li><span>🩺</span>Tick the OSCE stations you practise</li><li><span>🐢</span>Stay ahead of the tortoise = on track</li></ul>
+      <ul class="how"><li><span>✅</span>Log questions in one tap</li><li><span>🩺</span>Tick the OSCE stations you practise</li><li><span>📚</span>Track the UKMLA topics you’ve worked through</li><li><span>🐢</span>Stay ahead of the tortoise = on track</li></ul>
       <label>Your first name <small>(optional)</small><input id="w-name" type="text" maxlength="40" autocomplete="given-name" value="${esc(s.name)}"></label>
       <div class="two"><label>Placement ends<input id="w-plc" type="date" value="${s.placementEnd}"></label><label>Finals start<input id="w-exam" type="date" value="${s.exam}"></label></div>
       <div class="two"><label>🏥 Placement Qs/day<input id="w-qp" type="number" inputmode="numeric" min="0" max="400" value="${s.qPlacement}"></label><label>📚 Revision Qs/day<input id="w-qr" type="number" inputmode="numeric" min="0" max="400" value="${s.qRevision}"></label></div>
@@ -646,6 +763,15 @@ function sheetHTML() {
     return `<h3>Questions done</h3><p class="muted small">${fmtLong(d)}</p>
       <input id="numInput" class="num-input" type="number" inputmode="numeric" pattern="[0-9]*" min="0" max="5000" value="${getLog(d).q || ''}" placeholder="0">
       <div class="two-btns"><button class="btn ghost" data-action="${sh.back ? 'backToDay' : 'closeSheet'}" data-date="${d}">Cancel</button><button class="btn primary" data-action="saveNumber" data-date="${d}">Save</button></div>`;
+  }
+  if (sh.type === 'area') {
+    const st = topicStats().groups.find(x => x.g.id === sh.id);
+    if (!st) return '';
+    return `<div class="sheet-head"><div><h3>${st.g.emoji} ${esc(st.g.name)}</h3><p class="muted small"><b>${st.rated}</b> of ${st.total} worked through</p></div>
+        <button class="btn small primary" data-action="closeSheet">Done</button></div>
+      ${stackBar(st.counts, st.total)}
+      <p class="rate-help">Tap how you feel: 😬 shaky · 🙂 OK · 💪 confident. Tap again to clear.</p>
+      <div class="sheet-body">${st.g.items.map(it => topicRow(it)).join('')}</div>`;
   }
   if (sh.type === 'stations') {
     const counts = stationCounts(), ticked = new Set(getLog(d).osce);
@@ -710,7 +836,7 @@ function filterStations(q) {
 }
 
 // ---------- Rendering ----------
-const VIEWS = { today: viewToday, journey: viewJourney, osce: viewOsce, settings: viewSettings };
+const VIEWS = { today: viewToday, journey: viewJourney, topics: viewTopics, osce: viewOsce, settings: viewSettings };
 function render() {
   const tab = currentTab();
   let html = VIEWS[tab](buildPlan());
@@ -833,6 +959,18 @@ const actions = {
   dismissInstall: () => { state.installDismissed = true; save(); render(); },
   exportData: () => exportData(),
   importData: () => $('#importFile').click(),
+  openArea: d => openSheet({ type: 'area', id: d.id }),
+  topicSort: d => { ui.topicSort = d.sort; render(); },
+  toggleShaky: () => { ui.showAllShaky = !ui.showAllShaky; render(); },
+  rate: d => {
+    const v = Number(d.r), cur = (state.topics[d.id] || {}).r || 0;
+    const g = TOPIC_GROUPS.find(x => x.items.some(it => it.id === d.id));
+    const covered = () => g ? g.items.filter(it => state.topics[it.id]).length : 0;
+    const before = covered();
+    if (cur === v) delete state.topics[d.id]; else state.topics[d.id] = { r: v, d: todayKey() };
+    save(); render();
+    if (g && before < g.items.length && covered() === g.items.length) { confetti.fire(); toast(`${g.emoji} ${g.name}: every topic covered! 🎉`); }
+  },
   tryDemo: () => { location.href = `${location.pathname}?demo#today`; },
   exitDemo: () => { location.href = `${location.pathname}#today`; },
   resetDemo: () => { state = demoState(); save(); closeSheet(); render(); window.scrollTo(0, 0); toast('Demo reset 🧪'); },
@@ -906,7 +1044,10 @@ document.addEventListener('change', e => {
   else if (el.id === 'importFile' && el.files && el.files[0]) { importFile(el.files[0]); el.value = ''; }
   else if (el.id === 'newStationCat') { const n = $('#newStationCatName'); n.hidden = el.value !== '__new'; if (!n.hidden) n.focus(); }
 });
-document.addEventListener('input', e => { if (e.target.id === 'stationSearch') filterStations(e.target.value); });
+document.addEventListener('input', e => {
+  if (e.target.id === 'stationSearch') filterStations(e.target.value);
+  if (e.target.id === 'topicSearch') { ui.topicQuery = e.target.value; $('#topicResults').innerHTML = topicResultsHTML(ui.topicQuery); }
+});
 document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && e.target.id === 'numInput') { e.preventDefault(); $('[data-action="saveNumber"]').click(); }
   if (e.key === 'Escape' && sheet && sheet.type !== 'welcome') closeSheet();
