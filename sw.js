@@ -1,11 +1,12 @@
 // Offline support: serve the app from cache, refresh the cache in the background.
 // Bump VERSION when you change any file so phones pick up the new copy.
-const VERSION = 'revision-pulse-v3';
+const VERSION = 'revision-pulse-v4';
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './topics.js', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // cache: 'reload' skips the browser's short-term HTTP cache so a new version never mixes old and new files.
+  e.waitUntil(caches.open(VERSION).then(c => c.addAll(ASSETS.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {
