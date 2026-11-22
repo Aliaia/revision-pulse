@@ -335,7 +335,8 @@ input:focus, select:focus { border-color: var(--brand); }
 .welcome label { display: block; font-size: 13px; font-weight: 800; color: var(--muted); margin-bottom: 12px; }
 .welcome label input { margin-top: 5px; color: var(--ink); font-weight: 700; }
 .welcome label small { font-weight: 600; }
-.two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: end; }
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-items: end; }
+.two input { min-width: 0; max-width: 100%; }
 
 /* ---------- Tab bar ---------- */
 .tabbar {
