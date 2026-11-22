@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Revision Pulse</title>
+  <meta name="description" content="Tick off question-bank and OSCE revision and see if you're on target for finals.">
+  <meta name="theme-color" content="#6D4AFF">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Revision">
+  <meta name="format-detection" content="telephone=no">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="statusbar" aria-hidden="true"></div>
+  <main id="app" aria-live="polite"></main>
+
+  <nav class="tabbar" aria-label="Main">
+    <button class="tab" data-action="tab" data-tab="today">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16.5 9.5"/></svg>Today
+    </button>
+    <button class="tab" data-action="tab" data-tab="journey">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l5.5-5.5 4 4L21 7"/><path d="M15 7h6v6"/></svg>Journey
+    </button>
+    <button class="tab" data-action="tab" data-tab="osce">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2.5"/><path d="M9 3.5h6v3H9z"/><path d="M9 13.5l2 2 4-4"/></svg>OSCE
+    </button>
+    <button class="tab" data-action="tab" data-tab="settings">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17" r="2"/></svg>Settings
+    </button>
+  </nav>
+
+  <div id="sheet-root"></div>
+  <div id="toast" class="toast" role="status"></div>
+  <canvas id="confetti" aria-hidden="true"></canvas>
+  <noscript><p style="padding:24px">Revision Pulse needs JavaScript turned on.</p></noscript>
+  <script src="app.js"></script>
+</body>
+</html>
